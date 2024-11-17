@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minesweeper Game in JavaScript</title>
+    <style>
+        canvas {
+            background-color: #f0f0f0;
+            border: 1px solid #000;
+            display: block; /* 确保 canvas 显示出来 */
+        }
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-family: Arial, sans-serif;
+        }
+        #difficultyButtons {
+            margin-bottom: 20px;
+        }
+        button {
+            margin: 0 10px;
+            padding: 10px;
+            font-size: 16px;
+            font-weight: bold;
+        }
+        #endScreen {
+            display: none;
+            text-align: center;
+        }
+        #endScreen button {
+            margin-top: 20px;
+            margin-right: 10px;
+        }
+        #settingsIcon {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            cursor: pointer;
+            z-index: 2;
+        }
+        #settingsMenu {
+            display: none;
+            position: fixed;
+            top: 60px;
+            right: 20px;
+            background-color: white;
+            border: 1px solid black;
+            padding: 20px;
+            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.5);
+            z-index: 2;
+        }
+        .settings-option {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .settings-option label {
+            margin-right: 10px;
+            color: black;
+        }
+    </style>
+</head>
+<body>
+    <h1 id="title">Minesweeper Game</h1>
+    <img id="settingsIcon" src="https://img.icons8.com/ios-filled/50/000000/settings.png" alt="Settings Icon" onclick="toggleSettingsMenu()">
+    <div id="settingsMenu">
+        <div class="settings-option">
+            <label for="languageSelect" id="languageLabel">Language:</label>
+            <select id="languageSelect" onchange="changeLanguage()">
+                <option value="en">English</option>
+                <option value="zh">中文</option>
+            </select>
+        </div>
+        <div class="settings-option">
+            <label for="themeSelect" id="themeLabel">Theme:</label>
+            <select id="themeSelect" onchange="changeTheme()">
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+            </select>
+        </div>
+    </div>
+    <div id="welcomeMessage">
+        <p id="welcomeText">Welcome to Minesweeper! Please select a difficulty to start the game:</p>
+    </div>
+    <div id="difficultyButtons">
+        <button onclick="setDifficulty('easy')" id="easyButton">Easy</button>
+        <button onclick="setDifficulty('medium')" id="mediumButton">Medium</button>
+        <button onclick="setDifficulty('hard')" id="hardButton">Hard</button>
+    </div>
+    <canvas id="gameCanvas" width="600" height="600"></canvas>
+    <div id="timer" style="display: none;">Time: 0 s</div>
+    <div id="endScreen">
+        <h1 id="endMessage"></h1>
+        <button onclick="resetGame()" id="retryButton">Retry</button>
+        <button onclick="showDifficultySelection()" id="selectDifficultyButton">Select Difficulty</button>
+        <button onclick="quitGame()" id="quitButton">Quit</button>
+    </div>
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+        const timerElement = document.getElementById("timer");
+        const welcomeMessage = document.getElementById("welcomeMessage");
+        const difficultyButtons = document.getElementById("difficultyButtons");
+        const endScreen = document.getElementById("endScreen");
+        const endMessage = document.getElementById("endMessage");
+
+        const difficulties = {
+            easy: { rows: 9, cols: 9, mines: 10 },
+            medium: { rows: 16, cols: 16, mines: 40 },
+            hard: { rows: 22, cols: 22, mines: 99 }
+        };
+        
+        let rows;
+        let cols;
+        let mines;
+        let grid;
+        let revealed;
+        let flags;
+        let gameOver = false;
+        let startTime;
+        let timerInterval;
+        let CELL_SIZE;
+        let currentTheme = "light";
+
+        function setDifficulty(level) {
+            rows = difficulties[level].rows;
+            cols = difficulties[level].cols;
+            mines = difficulties[level].mines;
+            CELL_SIZE = 600 / cols;
+            canvas.width = cols * CELL_SIZE;
+            canvas.height = rows * CELL_SIZE;
+            startGame();
+        }
+
+        function startGame() {
+            welcomeMessage.style.display = "none";
+            difficultyButtons.style.display = "none";
+            endScreen.style.display = "none";
+            canvas.style.display = "block";
+            timerElement.style.display = "block";
+            resetGame();
+        }
+
+        function resetGame() {
+            canvas.style.display = "block";
+            timerElement.style.display = "block";
+            grid = Array.from({ length: rows }, () => Array(cols).fill(0));
+            revealed = Array.from({ length: rows }, () => Array(cols).fill(false));
+            flags = Array.from({ length: rows }, () => Array(cols).fill(false));
+            gameOver = false;
+            startTime = Date.now();
+            clearInterval(timerInterval);
+            timerInterval = setInterval(updateTimer, 1000);
+            timerElement.textContent = "Time: 0 s";
+            placeMines();
+            calculateNumbers();
+            drawGrid();
+        }
+
+        function placeMines() {
+            let count = 0;
+            while (count < mines) {
+                let row = Math.floor(Math.random() * rows);
+                let col = Math.floor(Math.random() * cols);
+                if (grid[row][col] !== -1) {
+                    grid[row][col] = -1;
+                    count++;
+                }
+            }
+        }
+
+        function calculateNumbers() {
+            for (let row = 0; row < rows; row++) {
+                for (let col = 0; col < cols; col++) {
+                    if (grid[row][col] === -1) continue;
+                    let minesCount = 0;
+                    for (let i = -1; i <= 1; i++) {
+                        for (let j = -1; j <= 1; j++) {
+                            if (isInBounds(row + i, col + j) && grid[row + i][col + j] === -1) {
+                                minesCount++;
+                            }
+                        }
+                    }
+                    grid[row][col] = minesCount;
+                }
+            }
+        }
+
+        function isInBounds(row, col) {
+            return row >= 0 && row < rows && col >= 0 && col < cols;
+        }
+
+        function drawGrid() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = "#000";
+            for (let row = 0; row < rows; row++) {
+                for (let col = 0; col < cols; col++) {
+                    ctx.fillStyle = revealed[row][col] ? "#ccc" : "#f0f0f0";
+                    ctx.fillRect(col * CELL_SIZE, row * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+                    ctx.strokeRect(col * CELL_SIZE, row * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+
+                    if (revealed[row][col]) {
+                        if (grid[row][col] === -1) {
+                            ctx.fillStyle = "red";
+                            ctx.beginPath();
+                            ctx.arc(col * CELL_SIZE + CELL_SIZE / 2, row * CELL_SIZE + CELL_SIZE / 2, CELL_SIZE / 4, 0, 2 * Math.PI);
+                            ctx.fill();
+                        } else if (grid[row][col] > 0) {
+                            ctx.fillStyle = "#000";
+                            ctx.font = `${CELL_SIZE / 2}px Arial`;
+                            ctx.textAlign = "center";
+                            ctx.textBaseline = "middle";
+                            ctx.fillText(grid[row][col], col * CELL_SIZE + CELL_SIZE / 2, row * CELL_SIZE + CELL_SIZE / 2);
+                        }
+                    } else if (flags[row][col]) {
+                        ctx.fillStyle = "red";
+                        ctx.font = `${CELL_SIZE / 2}px Arial`;
+                        ctx.textAlign = "center";
+                        ctx.textBaseline = "middle";
+                        ctx.fillText("F", col * CELL_SIZE + CELL_SIZE / 2, row * CELL_SIZE + CELL_SIZE / 2);
+                    }
+                }
+            }
+        }
+
+        function updateTimer() {
+            if (gameOver) {
+                clearInterval(timerInterval);
+                return;
+            }
+            const elapsedTime = Math.floor((Date.now() - startTime) / 1000);
+            timerElement.textContent = `Time: ${elapsedTime} s`;
+        }
+
+        canvas.addEventListener("click", (event) => {
+            if (gameOver) return;
+            const rect = canvas.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+            const col = Math.floor(x / CELL_SIZE);
+            const row = Math.floor(y / CELL_SIZE);
+            if (isInBounds(row, col)) {
+                revealCell(row, col);
+                if (grid[row][col] === -1) {
+                    showEndScreen("YOU LOSE!");
+                } else if (checkWin()) {
+                    showEndScreen("YOU WIN!");
+                }
+                drawGrid();
+            }
+        });
+
+        canvas.addEventListener("contextmenu", (event) => {
+            event.preventDefault();
+            if (gameOver) return;
+            const rect = canvas.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+            const col = Math.floor(x / CELL_SIZE);
+            const row = Math.floor(y / CELL_SIZE);
+            if (isInBounds(row, col) && !revealed[row][col]) {
+                flags[row][col] = !flags[row][col];
+                drawGrid();
+            }
+        });
+
+        function revealCell(row, col) {
+            if (!isInBounds(row, col) || revealed[row][col] || flags[row][col]) return;
+            revealed[row][col] = true;
+            if (grid[row][col] === 0) {
+                for (let i = -1; i <= 1; i++) {
+                    for (let j = -1; j <= 1; j++) {
+                        if (i !== 0 || j !== 0) {
+                            revealCell(row + i, col + j);
+                        }
+                    }
+                }
+            }
+        }
+
+        function checkWin() {
+            for (let row = 0; row < rows; row++) {
+                for (let col = 0; col < cols; col++) {
+                    if (grid[row][col] !== -1 && !revealed[row][col]) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        function showEndScreen(message) {
+            gameOver = true;
+            clearInterval(timerInterval);
+            endMessage.textContent = message;
+            canvas.style.display = "none";
+            timerElement.style.display = "none";
+            endScreen.style.display = "block";
+            gameOver = false;
+        }
+
+        function toggleSettingsMenu() {
+            const settingsMenu = document.getElementById("settingsMenu");
+            settingsMenu.style.display = settingsMenu.style.display === "none" ? "block" : "none";
+        }
+
+        function changeLanguage() {
+            const language = document.getElementById("languageSelect").value;
+            if (language === "zh") {
+                document.getElementById("languageLabel").textContent = "语言:";
+                document.getElementById("themeLabel").textContent = "主题:";
+                document.getElementById("title").textContent = "扫雷游戏";
+                document.getElementById("welcomeText").textContent = "欢迎来到扫雷！请选择一个难度来开始游戏：";
+                document.getElementById("easyButton").textContent = "简单";
+                document.getElementById("mediumButton").textContent = "中等";
+                document.getElementById("hardButton").textContent = "困难";
+                document.getElementById("retryButton").textContent = "重试";
+                document.getElementById("selectDifficultyButton").textContent = "选择难度";
+                document.getElementById("quitButton").textContent = "退出";
+            } else {
+                document.getElementById("languageLabel").textContent = "Language:";
+                document.getElementById("themeLabel").textContent = "Theme:";
+                document.getElementById("title").textContent = "Minesweeper Game";
+                document.getElementById("welcomeText").textContent = "Welcome to Minesweeper! Please select a difficulty to start the game:";
+                document.getElementById("easyButton").textContent = "Easy";
+                document.getElementById("mediumButton").textContent = "Medium";
+                document.getElementById("hardButton").textContent = "Hard";
+                document.getElementById("retryButton").textContent = "Retry";
+                document.getElementById("selectDifficultyButton").textContent = "Select Difficulty";
+                document.getElementById("quitButton").textContent = "Quit";
+            }
+        }
+
+        function changeTheme() {
+            currentTheme = document.getElementById("themeSelect").value;
+            const textColor = currentTheme === "dark" ? "white" : "black";
+            const buttonTextColor = currentTheme === "dark" ? "black" : "black";
+            document.body.style.backgroundColor = currentTheme === "dark" ? "#2b2b2b" : "white";
+            document.body.style.color = textColor;
+            canvas.style.backgroundColor = currentTheme === "dark" ? "#3b3b3b" : "#f0f0f0";
+            canvas.style.border = currentTheme === "dark" ? "1px solid #777" : "1px solid #000";
+
+            document.getElementById("languageLabel").style.color = "black";
+            document.getElementById("themeLabel").style.color = "black";
+            document.getElementById("welcomeText").style.color = textColor;
+            document.getElementById("easyButton").style.color = buttonTextColor;
+            document.getElementById("mediumButton").style.color = buttonTextColor;
+            document.getElementById("hardButton").style.color = buttonTextColor;
+            document.getElementById("retryButton").style.color = buttonTextColor;
+            document.getElementById("selectDifficultyButton").style.color = buttonTextColor;
+            document.getElementById("quitButton").style.color = buttonTextColor;
+            document.getElementById("easyButton").style.backgroundColor = currentTheme === "dark" ? "#cccccc" : "#f0f0f0";
+            document.getElementById("mediumButton").style.backgroundColor = currentTheme === "dark" ? "#cccccc" : "#f0f0f0";
+            document.getElementById("hardButton").style.backgroundColor = currentTheme === "dark" ? "#cccccc" : "#f0f0f0";
+        }
+
+        function showDifficultySelection() {
+            endScreen.style.display = "none";
+            welcomeMessage.style.display = "block";
+            difficultyButtons.style.display = "block";
+            canvas.style.display = "none";
+            timerElement.style.display = "none";
+        }
+
+        function quitGame() {
+            endScreen.style.display = "none";
+            welcomeMessage.style.display = "block";
+            difficultyButtons.style.display = "block";
+            canvas.style.display = "none";
+            timerElement.style.display = "none";
+        }
+    </script>
+</body>
+</html>
